@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Code Graph</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <header id="panel-header">
+    <span id="panel-title">Code Graph</span>
+    <div id="panel-controls">
+      <select id="mode-select" title="Graph mode">
+        <option value="imports">Imports / Dependencies</option>
+        <option value="calls">Function Calls</option>
+      </select>
+      <input id="path-filter" type="text" placeholder="Filter by path prefix…" />
+      <button id="refresh-btn" title="Regenerate graph">↺</button>
+      <button id="copy-btn" title="Copy Mermaid source">Copy</button>
+      <button id="download-btn" title="Download SVG">SVG</button>
+    </div>
+  </header>
+
+  <div id="status-bar"></div>
+
+  <div id="graph-container">
+    <div id="graph-placeholder">
+      <p>Loading graph…</p>
+    </div>
+    <div id="mermaid-output" class="mermaid" style="display:none"></div>
+  </div>
+
+  <script src="../vendor/mermaid.min.js"></script>
+  <script src="panel.js" type="module"></script>
+</body>
+</html>

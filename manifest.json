@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Code Graph — Mermaid Dependency Viewer",
+  "version": "0.1.0",
+  "description": "Generates interactive Mermaid dependency graphs for any GitHub repository — files, imports, and function-level call edges.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://github.com/*",
+    "https://api.github.com/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*/*"],
+      "js": ["content/inject.js"],
+      "css": ["content/inject.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options/options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["panel/panel.html", "panel/panel.js", "panel/panel.css", "vendor/mermaid.min.js"],
+      "matches": ["https://github.com/*"]
+    }
+  ]
+}

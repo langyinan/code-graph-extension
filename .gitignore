@@ -1,0 +1,4 @@
+node_modules/
+dist/
+*.zip
+vendor/mermaid.min.js

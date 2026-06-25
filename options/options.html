@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Code Graph — Options</title>
+  <style>
+    body { font-family: system-ui; max-width: 520px; margin: 40px auto; padding: 0 16px; color: #24292f; }
+    h1 { font-size: 20px; }
+    label { display: block; margin-top: 16px; font-weight: 600; }
+    input, select { width: 100%; padding: 6px 8px; border: 1px solid #d0d7de; border-radius: 6px; margin-top: 4px; font-size: 13px; }
+    button { margin-top: 16px; padding: 6px 16px; background: #2da44e; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    #status { margin-top: 8px; color: #2da44e; }
+  </style>
+</head>
+<body>
+  <h1>Code Graph Options</h1>
+
+  <label for="api-key">GitHub Personal Access Token</label>
+  <input id="api-key" type="password" placeholder="ghp_…" />
+
+  <label for="default-mode">Default graph mode</label>
+  <select id="default-mode">
+    <option value="imports">Imports / Dependencies</option>
+    <option value="calls">Function Calls</option>
+  </select>
+
+  <button id="save">Save Options</button>
+  <div id="status"></div>
+
+  <script>
+    const apiKeyEl = document.getElementById('api-key');
+    const modeEl = document.getElementById('default-mode');
+    const status = document.getElementById('status');
+
+    chrome.storage.local.get(['githubApiKey', 'defaultMode'], data => {
+      if (data.githubApiKey) apiKeyEl.value = data.githubApiKey;
+      if (data.defaultMode) modeEl.value = data.defaultMode;
+    });
+
+    document.getElementById('save').addEventListener('click', () => {
+      chrome.storage.local.set({
+        githubApiKey: apiKeyEl.value.trim(),
+        defaultMode: modeEl.value,
+      }, () => {
+        status.textContent = 'Options saved.';
+        setTimeout(() => (status.textContent = ''), 2000);
+      });
+    });
+  </script>
+</body>
+</html>

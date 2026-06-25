@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Code Graph Settings</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>Code Graph</h1>
+  <p class="subtitle">Mermaid dependency graphs for GitHub</p>
+
+  <label for="api-key-input">GitHub Personal Access Token <span class="optional">(optional — needed for private repos &amp; higher rate limits)</span></label>
+  <input id="api-key-input" type="password" placeholder="ghp_…" autocomplete="off" />
+
+  <div id="save-row">
+    <button id="save-btn">Save</button>
+    <span id="save-status"></span>
+  </div>
+
+  <hr />
+
+  <p class="help">Navigate to any GitHub repository and click the <strong>Code Graph</strong> button in the top nav to generate a graph.</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>
