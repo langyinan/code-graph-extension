@@ -43,13 +43,19 @@ function parseJS(src) {
 
 function parsePython(src) {
   const results = [];
-  // from .foo import bar  |  import foo.bar
-  const re = /^(?:from\s+([\w.]+)\s+import|import\s+([\w.,\s]+))/gm;
+  // from .foo import bar  |  import foo.bar  |  import a.b, c.d as e
+  // NOTE: the module list uses [ \t] (not \s) so it can't run past the line.
+  const re = /^[ \t]*(?:from[ \t]+([.\w]+)[ \t]+import|import[ \t]+([\w., \t]+))/gm;
   let m;
   while ((m = re.exec(src)) !== null) {
-    const spec = (m[1] || m[2]).trim().split(',')[0].trim();
-    // Convert package.module → relative path hint
-    results.push(spec.replace(/\./g, '/'));
+    if (m[1]) {
+      results.push(m[1].replace(/\./g, '/')); // from <module> import …
+    } else {
+      for (const part of m[2].split(',')) {
+        const name = part.trim().split(/[ \t]+as[ \t]+/)[0].trim(); // strip "as alias"
+        if (name) results.push(name.replace(/\./g, '/'));
+      }
+    }
   }
   return results;
 }

@@ -21,7 +21,22 @@
     </div>
   </header>
 
+  <div id="panel-toggles">
+    <label title="Group files into folder subgraphs">
+      <input type="checkbox" id="toggle-grouping" checked /> Folder structure
+    </label>
+    <label title="Show imported npm / 3rd-party packages as nodes">
+      <input type="checkbox" id="toggle-externals" checked /> External deps
+    </label>
+    <label title="Keep files that have no dependency edges">
+      <input type="checkbox" id="toggle-isolated" checked /> Isolated files
+    </label>
+  </div>
+
   <div id="status-bar"></div>
+  <div id="progress-bar" style="display:none">
+    <div id="progress-fill"></div>
+  </div>
 
   <div id="graph-container">
     <div id="graph-placeholder">
