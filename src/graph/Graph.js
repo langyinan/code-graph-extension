@@ -19,10 +19,13 @@ export class Graph {
 
   /**
    * @param {object} [opts]
-   * @param {string} [opts.linkBase] If set, each node gets a `click … href`
-   *   directive opening `linkBase + node.path` (e.g. the file on GitHub).
+   * @param {string} [opts.linkBase] If set, file/function nodes get a `click … href`
+   *   directive opening `linkBase + node.path` (e.g. the file's GitHub blob URL).
+   * @param {string} [opts.linkBaseDir] Used instead of linkBase for `component`
+   *   nodes, which point to a folder (GitHub tree URL) rather than a file.
+   * @param {boolean} [opts.grouping] Emit directory subgraphs when true.
    */
-  toMermaid({ linkBase, grouping = true } = {}) {
+  toMermaid({ linkBase, linkBaseDir, grouping = true } = {}) {
     const lines = ['graph LR'];
 
     // Mermaid v11 node IDs must be simple alphanumeric tokens.
@@ -51,7 +54,9 @@ export class Graph {
     const shapeFor = node => {
       const lbl = safeLabel(node.label);
       if (node.type === 'function') return `(["${lbl}"])`;
+      if (node.type === 'variable') return `("${lbl}")`; // rounded rect — grows with text, can't clip like a circle
       if (node.type === 'external') return `{{"${lbl}"}}`;
+      if (node.type === 'component') return `[["${lbl}"]]`;
       return `["${lbl}"]`;
     };
 
@@ -76,9 +81,21 @@ export class Graph {
       }
     }
 
+    // Edges. When an edge has a source line, label it "L<n>" and record a link
+    // to that exact line (keyed by Mermaid's edge DOM id) for click handling.
+    const edgeLinks = {};
     const arrowFor = type => (type === 'import' ? '-->' : '-.->');
     for (const edge of this.edges) {
-      lines.push(`  ${alias(edge.from)} ${arrowFor(edge.type)} ${alias(edge.to)}`);
+      const a = alias(edge.from);
+      const b = alias(edge.to);
+      const arrow = arrowFor(edge.type);
+      if (linkBase && edge.file && edge.line) {
+        lines.push(`  ${a} ${arrow}|"L${edge.line}"| ${b}`);
+        const url = linkBase + edge.file.split('/').map(encodeURIComponent).join('/') + `#L${edge.line}`;
+        edgeLinks[`L_${a}_${b}_0`] = url;
+      } else {
+        lines.push(`  ${a} ${arrow} ${b}`);
+      }
     }
 
     // Style external (3rd-party) nodes distinctly.
@@ -88,16 +105,32 @@ export class Graph {
       lines.push(`  class ${externals.join(',')} external;`);
     }
 
+    // Style component (folder) nodes distinctly.
+    const components = [...this.nodes.values()].filter(n => n.type === 'component').map(n => alias(n.id));
+    if (components.length) {
+      lines.push('  classDef component fill:#ddf4ff,stroke:#0969da,color:#0a3069;');
+      lines.push(`  class ${components.join(',')} component;`);
+    }
+
+    // Style variable nodes distinctly.
+    const variables = [...this.nodes.values()].filter(n => n.type === 'variable').map(n => alias(n.id));
+    if (variables.length) {
+      lines.push('  classDef variable fill:#dafbe1,stroke:#1a7f37,color:#0a3622;');
+      lines.push(`  class ${variables.join(',')} variable;`);
+    }
+
     // Click-to-open links (requires mermaid securityLevel: 'loose').
+    // Components link to the folder (tree URL); everything else to the file (blob URL).
     if (linkBase) {
       for (const [id, node] of this.nodes) {
         if (!node.path) continue;
-        const url = linkBase + node.path.split('/').map(encodeURIComponent).join('/');
+        const base = node.type === 'component' ? (linkBaseDir || linkBase) : linkBase;
+        const url = base + node.path.split('/').map(encodeURIComponent).join('/');
         lines.push(`  click ${alias(id)} href "${url}" _blank`);
       }
     }
 
-    return lines.join('\n');
+    return { mermaid: lines.join('\n'), edgeLinks };
   }
 
   stats() {

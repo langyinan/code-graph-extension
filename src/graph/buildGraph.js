@@ -1,35 +1,39 @@
 import { fetchFileContent } from '../github/fetchTree.js';
 import { parseImports } from '../parsers/parseImports.js';
 import { parseCalls } from '../parsers/parseCalls.js';
+import { parseSymbols } from '../parsers/parseSymbols.js';
 import { Graph } from './Graph.js';
 import { pruneGraph } from './pruneGraph.js';
 
 const SKIPPED_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '__pycache__', 'vendor']);
 const MAX_FILE_BYTES = 150_000; // skip minified / generated files
-const JS_EXTS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs']);
 
 export async function buildGraph({
   tree, owner, repo, ref, path, mode, apiKey, onProgress,
   includeExternals = true,
   keepIsolated = true,
+  detail = 'medium', // 'low' = components, 'medium' = source files, 'high' = all files, 'symbols' = functions+variables
 }) {
   const graph = new Graph();
 
-  // Filter to source files inside the requested path
+  // 'high' detail includes every file (code + non-code); otherwise just source files.
   const files = tree.filter(node => {
     if (path && !node.path.startsWith(path)) return false;
     const parts = node.path.split('/');
     if (parts.some(p => SKIPPED_DIRS.has(p))) return false;
     if (node.size > MAX_FILE_BYTES) return false;
-    return isSupportedExtension(node.path);
+    return detail === 'high' ? true : isSupportedExtension(node.path);
   });
 
   const fileSet = new Set(files.map(f => f.path));
 
+  // The symbol breakdown is a detail level that supersedes the import/call mode.
+  const symbolMode = detail === 'symbols';
+
   // In imports mode, add every file up front (grouped by directory) so even
-  // files with no edges still appear. In calls mode the nodes are functions,
-  // added as they're discovered.
-  if (mode !== 'calls') {
+  // files with no edges still appear. In calls/symbols mode the nodes are
+  // functions/variables, added as they're discovered.
+  if (mode !== 'calls' && !symbolMode) {
     for (const f of files) {
       graph.addNode({
         id: f.path,
@@ -46,11 +50,20 @@ export async function buildGraph({
 
   await Promise.all(
     files.map(async f => {
+      // Non-code files (only present in 'high' detail) appear as nodes but have
+      // nothing to parse — no need to fetch their content.
+      if (!isSupportedExtension(f.path)) {
+        done++;
+        if (onProgress) onProgress(done, total);
+        return;
+      }
       try {
         const content = await fetchFileContent({ owner, repo, ref, path: f.path, apiKey });
         const ext = extOf(f.path);
 
-        if (mode === 'calls') {
+        if (symbolMode) {
+          addSymbols(graph, content, ext, f.path);
+        } else if (mode === 'calls') {
           addCalls(graph, content, ext, f.path);
         } else {
           addImports(graph, content, ext, f.path, fileSet, includeExternals);
@@ -64,23 +77,58 @@ export async function buildGraph({
     })
   );
 
-  return pruneGraph(graph, { keepIsolated });
+  const result = detail === 'low' ? collapseToComponents(graph) : graph;
+  return pruneGraph(result, { keepIsolated });
+}
+
+/**
+ * Collapses file/function nodes into one node per top-level folder ("component"),
+ * remapping edges between components and dropping intra-component edges. External
+ * package nodes pass through unchanged. Root-level files stay as themselves.
+ */
+function collapseToComponents(graph) {
+  const out = new Graph();
+  const idFor = new Map();
+
+  const toComponent = node => {
+    if (node.type === 'external') return { ...node };
+    const top = node.path.split('/')[0];
+    if (node.path.includes('/')) {
+      return { id: `dir:${top}`, label: `${top}/`, type: 'component', path: top };
+    }
+    return { id: node.path, label: node.path, type: 'file', path: node.path };
+  };
+
+  for (const [, node] of graph.nodes) {
+    const cn = toComponent(node);
+    idFor.set(node.id, cn.id);
+    out.addNode(cn);
+  }
+
+  for (const e of graph.edges) {
+    const from = idFor.get(e.from);
+    const to = idFor.get(e.to);
+    if (from && to && from !== to) out.addEdge({ from, to, type: e.type });
+  }
+
+  return out;
 }
 
 function addImports(graph, content, ext, filePath, fileSet, includeExternals) {
   const imports = parseImports(content, ext, filePath);
-  for (const imp of imports) {
-    if (!isValidSpecifier(imp)) continue; // guard against matches inside comments/strings
-    const resolved = resolveImport(imp, filePath, fileSet);
+  for (const { spec, line } of imports) {
+    if (!isValidSpecifier(spec)) continue; // guard against matches inside comments/strings
+    const resolved = resolveImport(spec, filePath, fileSet);
     if (resolved) {
-      graph.addEdge({ from: filePath, to: resolved, type: 'import' });
-    } else if (includeExternals && JS_EXTS.has(ext) && !imp.startsWith('.')) {
-      // External (npm / 3rd-party) package — show it as its own node.
-      const pkg = externalName(imp);
+      graph.addEdge({ from: filePath, to: resolved, type: 'import', file: filePath, line });
+    } else if (includeExternals && !spec.startsWith('.') && !spec.startsWith('/')) {
+      // External (3rd-party / stdlib) dependency — show it as its own node.
+      // Applies to every language, not just JS.
+      const pkg = externalName(spec);
       if (!pkg) continue;
       const id = `ext:${pkg}`;
-      graph.addNode({ id, label: pkg, type: 'external', group: 'node_modules' });
-      graph.addEdge({ from: filePath, to: id, type: 'external' });
+      graph.addNode({ id, label: pkg, type: 'external', group: 'dependencies' });
+      graph.addEdge({ from: filePath, to: id, type: 'external', file: filePath, line });
     }
   }
 }
@@ -93,13 +141,29 @@ function addCalls(graph, content, ext, filePath) {
     // Functions are grouped under a subgraph named after their file.
     graph.addNode({ id: caller, label: call.caller, type: 'function', path: filePath, group: filePath });
     graph.addNode({ id: callee, label: call.callee, type: 'function', path: filePath, group: filePath });
-    graph.addEdge({ from: caller, to: callee, type: 'call' });
+    graph.addEdge({ from: caller, to: callee, type: 'call', file: filePath, line: call.line });
   }
 }
 
 /** Real module specifiers are ASCII paths; rejects junk captured from comments (e.g. "…"). */
 function isValidSpecifier(spec) {
   return /^[@\w./~-]+$/.test(spec);
+}
+
+function addSymbols(graph, content, ext, filePath) {
+  const { symbols, edges } = parseSymbols(content, ext);
+  for (const s of symbols) {
+    graph.addNode({
+      id: `${filePath}::${s.name}`,
+      label: s.name,
+      type: s.kind === 'variable' ? 'variable' : 'function',
+      path: filePath,
+      group: filePath, // cluster symbols under their file
+    });
+  }
+  for (const e of edges) {
+    graph.addEdge({ from: `${filePath}::${e.from}`, to: `${filePath}::${e.to}`, type: 'call', file: filePath, line: e.line });
+  }
 }
 
 /** Reduces a bare specifier to its package name: '@scope/pkg/x' → '@scope/pkg', 'lodash/y' → 'lodash'. */

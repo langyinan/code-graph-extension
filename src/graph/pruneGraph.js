@@ -14,9 +14,11 @@ export function pruneGraph(graph, { keepIsolated = true } = {}) {
     connected.add(e.to);
   }
 
+  const STRUCTURAL = new Set(['file', 'external', 'component', 'variable', 'function']);
   for (const [id, node] of graph.nodes) {
-    // With keepIsolated, file/external nodes survive even with no edges.
-    const keepAlways = keepIsolated && (node.type === 'file' || node.type === 'external');
+    // With keepIsolated, structural nodes survive even with no edges, so the
+    // graph reflects the whole repo (files/folders) or every defined symbol.
+    const keepAlways = keepIsolated && STRUCTURAL.has(node.type);
     if (!keepAlways && !connected.has(id)) graph.nodes.delete(id);
   }
 

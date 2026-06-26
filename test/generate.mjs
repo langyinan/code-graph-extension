@@ -21,14 +21,15 @@ import { execSync } from 'child_process';
 const __dir = dirname(fileURLToPath(import.meta.url));
 
 // ── CLI args ─────────────────────────────────────────────────────────────────
-const [, , repoArg = 'langyinan/code-graph-extension', refArg = 'HEAD', modeArg = 'imports'] = process.argv;
+const [, , repoArg = 'langyinan/code-graph-extension', refArg = 'HEAD', modeArg = 'imports', detailArg = 'medium'] = process.argv;
 const [owner, repo] = repoArg.split('/');
 const ref = refArg;
-const mode = modeArg; // 'imports' | 'calls'
+const mode = modeArg;     // 'imports' | 'calls'
+const detail = detailArg; // 'low' | 'medium' | 'high'
 const apiKey = process.env.GITHUB_TOKEN || null;
 
 if (!owner || !repo) {
-  console.error('Usage: node test/generate.mjs [owner/repo] [ref] [imports|calls]');
+  console.error('Usage: node test/generate.mjs [owner/repo] [ref] [imports|calls] [low|medium|high]');
   process.exit(1);
 }
 
@@ -45,6 +46,7 @@ const graph = await buildGraph({
   tree, owner, repo, ref,
   path: undefined,   // whole repo
   mode,
+  detail,
   apiKey,
   onProgress(d, total) {
     done = d;
@@ -54,7 +56,8 @@ const graph = await buildGraph({
 console.log(`\n[code-graph] Done — ${graph.stats().nodes} nodes, ${graph.stats().edges} edges`);
 
 const linkBase = `https://github.com/${owner}/${repo}/blob/${ref}/`;
-const mermaidSrc = graph.toMermaid({ linkBase });
+const linkBaseDir = `https://github.com/${owner}/${repo}/tree/${ref}/`;
+const { mermaid: mermaidSrc, edgeLinks } = graph.toMermaid({ linkBase, linkBaseDir });
 
 // ── Write standalone HTML viewer ─────────────────────────────────────────────
 // Relative, forward-slashed path so it loads reliably under file://
@@ -91,11 +94,19 @@ const html = /* html */ `<!DOCTYPE html>
   <script>
     // Source is embedded as a JSON string to avoid any HTML/quote escaping issues.
     const source = ${JSON.stringify(mermaidSrc)};
+    const edgeLinks = ${JSON.stringify(edgeLinks)};
     mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose', maxTextSize: 500000 });
     (async () => {
       try {
         const { svg } = await mermaid.render('codeGraph', source);
-        document.getElementById('diagram').innerHTML = svg;
+        const diagram = document.getElementById('diagram');
+        diagram.innerHTML = svg;
+        diagram.querySelectorAll('[data-id^="L_"]').forEach(el => {
+          const href = edgeLinks[el.getAttribute('data-id')];
+          if (!href) return;
+          el.style.cursor = 'pointer';
+          el.addEventListener('click', () => window.open(href, '_blank'));
+        });
       } catch (e) {
         document.getElementById('err').textContent = 'Mermaid render error: ' + (e && e.message ? e.message : e);
         console.error(e);

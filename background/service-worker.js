@@ -12,6 +12,7 @@ chrome.runtime.onConnect.addListener(port => {
       grouping = true,
       includeExternals = true,
       keepIsolated = true,
+      detail = 'medium',
     } = msg.payload;
 
     try {
@@ -35,17 +36,16 @@ chrome.runtime.onConnect.addListener(port => {
         apiKey,
         includeExternals,
         keepIsolated,
+        detail,
         onProgress(done, total) {
           port.postMessage({ type: 'progress', done, total });
         },
       });
 
       const linkBase = `https://github.com/${owner}/${repo}/blob/${ref}/`;
-      port.postMessage({
-        type: 'done',
-        mermaid: graph.toMermaid({ linkBase, grouping }),
-        stats: graph.stats(),
-      });
+      const linkBaseDir = `https://github.com/${owner}/${repo}/tree/${ref}/`;
+      const { mermaid, edgeLinks } = graph.toMermaid({ linkBase, linkBaseDir, grouping });
+      port.postMessage({ type: 'done', mermaid, edgeLinks, stats: graph.stats() });
     } catch (err) {
       port.postMessage({ type: 'error', message: err.message });
     }

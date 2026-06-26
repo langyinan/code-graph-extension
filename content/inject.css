@@ -18,17 +18,51 @@
   background: var(--color-canvas-inset, #eaeef2);
 }
 
-#code-graph-panel {
+/* Reflow the page so the docked panel doesn't cover the content. */
+html.code-graph-docked {
+  transition: margin-right 0.12s ease;
+}
+
+/* No transition while dragging, or the resize feels laggy. */
+html.code-graph-resizing {
+  transition: none !important;
+}
+
+#code-graph-dock {
   position: fixed;
-  bottom: 0;
+  top: 0;
   right: 0;
-  width: min(900px, 100vw);
-  height: 55vh;
-  border: none;
-  border-top: 2px solid var(--color-border-default, #d0d7de);
-  border-left: 2px solid var(--color-border-default, #d0d7de);
-  border-radius: 8px 0 0 0;
+  height: 100vh;
+  display: flex;
   background: var(--color-canvas-default, #fff);
-  z-index: 9999;
-  box-shadow: -4px -4px 20px rgba(0,0,0,0.12);
+  z-index: 2147483646;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.12);
+}
+
+#code-graph-resizer {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: var(--color-border-default, #d0d7de);
+  opacity: 0.5;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+#code-graph-resizer:hover {
+  opacity: 1;
+  background: #7c3aed;
+}
+
+#code-graph-panel {
+  flex: 1 1 auto;
+  height: 100%;
+  border: none;
+  background: var(--color-canvas-default, #fff);
+}
+
+/* Full-viewport overlay that captures mouse events during a drag. */
+#code-graph-drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  cursor: col-resize;
 }
