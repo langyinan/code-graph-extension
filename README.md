@@ -1,11 +1,15 @@
-# Code Graph — Mermaid Dependency Viewer
+# Code Graph — Mermaid Dependency Graph for GitHub
 
-A Chrome + Firefox extension that injects a **Code Graph** button into any GitHub repository page and renders an interactive [Mermaid](https://mermaid.js.org/) diagram showing:
+A **Chrome & Firefox extension** that injects a **Code Graph** button into any GitHub repository page and renders an interactive [Mermaid](https://mermaid.js.org/) diagram of the codebase — without leaving GitHub. Visualize file imports, dependency graphs, function call graphs, and per-file symbols for 10+ languages.
 
-- **Import / dependency edges** — which files import which, across all supported languages
-- **Function call edges** — which functions call which helpers within a file (JS/TS/Python today)
+- **Import / dependency edges** — which files import which, plus external package dependencies
+- **Function call edges** — which functions call which, within a file
+- **Functions & variables** — per-file symbol breakdown with usage edges
+- **Adjustable detail** — collapse to folders/components or expand to every file and symbol
+- **Clickable nodes & edges** — jump straight to the file, or the exact source line, on GitHub
+- **Docked, resizable panel** with pan / zoom / drag and a color legend
 
-![screenshot placeholder](docs/screenshot.png)
+![Code Graph — interactive Mermaid dependency graph for a GitHub repository](docs/screenshot.png)
 
 ## Why this exists
 
@@ -49,16 +53,19 @@ Token needs `repo` scope for private repos; no scope needed for public.
 
 ## Supported languages
 
-| Language | Imports | Call edges |
-|----------|---------|------------|
-| JavaScript / TypeScript | ✅ ESM + CJS | ✅ |
-| Python | ✅ | ✅ |
-| Go | ✅ | — |
-| Rust | ✅ | — |
-| Java | ✅ | — |
-| Ruby | ✅ | — |
-| PHP | ✅ | — |
-| C# | ✅ | — |
+| Language | Imports | Call edges | Functions & variables |
+|----------|---------|------------|------------------------|
+| JavaScript / TypeScript (+ JSX/TSX) | ✅ ESM + CJS | ✅ | ✅ |
+| Python | ✅ | ✅ | ✅ |
+| Go | ✅ | ✅ | ✅ |
+| Rust | ✅ | ✅ | ✅ |
+| Java | ✅ | ✅ | ✅ |
+| Ruby | ✅ | ✅ | ✅ |
+| PHP | ✅ | ✅ | ✅ |
+| C# | ✅ | ✅ | ✅ |
+| C / C++ | ✅ `#include` | ✅ | ✅ |
+
+> Parsing is heuristic (regex-based per language), tuned against the fixtures in `test/fixtures/`.
 
 ## Architecture
 
@@ -83,8 +90,10 @@ manifest.json
 │   │   ├── buildGraph.js       # Orchestrates parse → resolve → prune
 │   │   └── pruneGraph.js       # Removes isolated nodes, caps at 120 nodes
 │   ├── parsers/
-│   │   ├── parseImports.js     # Regex-based import extractors per language
-│   │   └── parseCalls.js       # Intra-file call edge extractor (JS, Python)
+│   │   ├── declarations.js     # Shared function/variable declaration extractors
+│   │   ├── parseImports.js     # Import extractors per language (with line numbers)
+│   │   ├── parseCalls.js       # Intra-file call edge extractor (all languages)
+│   │   └── parseSymbols.js     # Per-file functions + variables with usage edges
 │   └── storage/
 │       └── settings.js
 └── vendor/
@@ -93,9 +102,11 @@ manifest.json
 
 ## Roadmap
 
+- [x] Click a node → jump to that file on GitHub
+- [x] Click an edge → jump to the exact source line
+- [x] Folder-level collapse / expand (detail levels)
+- [x] Multi-language call & symbol graphs
 - [ ] Tree-sitter WASM for accurate cross-file call resolution
-- [ ] Click a node → jump to that file on GitHub
-- [ ] Folder-level collapse / expand
 - [ ] Firefox MV2 manifest
 - [ ] Chrome Web Store + Firefox Add-ons listing
 - [ ] LLM-assisted cluster labelling (optional, opt-in)
