@@ -44,7 +44,8 @@ chrome.runtime.onConnect.addListener(port => {
 
       const linkBase = `https://github.com/${owner}/${repo}/blob/${ref}/`;
       const linkBaseDir = `https://github.com/${owner}/${repo}/tree/${ref}/`;
-      const { mermaid, edgeLinks } = graph.toMermaid({ linkBase, linkBaseDir, grouping });
+      const orient = detail === 'controlflow' ? 'TB' : 'LR';
+      const { mermaid, edgeLinks } = graph.toMermaid({ linkBase, linkBaseDir, grouping, orient });
       port.postMessage({ type: 'done', mermaid, edgeLinks, stats: graph.stats() });
     } catch (err) {
       port.postMessage({ type: 'error', message: err.message });

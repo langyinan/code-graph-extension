@@ -2,6 +2,7 @@ import { fetchFileContent } from '../github/fetchTree.js';
 import { parseImports } from '../parsers/parseImports.js';
 import { parseCalls } from '../parsers/parseCalls.js';
 import { parseSymbols } from '../parsers/parseSymbols.js';
+import { addControlFlow } from './buildControlFlow.js';
 import { Graph } from './Graph.js';
 import { pruneGraph } from './pruneGraph.js';
 
@@ -12,7 +13,7 @@ export async function buildGraph({
   tree, owner, repo, ref, path, mode, apiKey, onProgress,
   includeExternals = true,
   keepIsolated = true,
-  detail = 'medium', // 'low' = components, 'medium' = source files, 'high' = all files, 'symbols' = functions+variables
+  detail = 'medium', // 'low'=components, 'medium'=source files, 'high'=all files, 'symbols'=functions+variables, 'source'=symbols + code bodies
 }) {
   const graph = new Graph();
 
@@ -28,7 +29,11 @@ export async function buildGraph({
   const fileSet = new Set(files.map(f => f.path));
 
   // The symbol breakdown is a detail level that supersedes the import/call mode.
-  const symbolMode = detail === 'symbols';
+  // 'source' is the same breakdown plus each function's code body.
+  // 'controlflow' renders each function as an if/loop flowchart.
+  const cfgMode = detail === 'controlflow';
+  const symbolMode = detail === 'symbols' || detail === 'source' || cfgMode;
+  const withSource = detail === 'source';
 
   // In imports mode, add every file up front (grouped by directory) so even
   // files with no edges still appear. In calls/symbols mode the nodes are
@@ -61,8 +66,10 @@ export async function buildGraph({
         const content = await fetchFileContent({ owner, repo, ref, path: f.path, apiKey });
         const ext = extOf(f.path);
 
-        if (symbolMode) {
-          addSymbols(graph, content, ext, f.path);
+        if (cfgMode) {
+          addControlFlow(graph, content, ext, f.path);
+        } else if (symbolMode) {
+          addSymbols(graph, content, ext, f.path, withSource);
         } else if (mode === 'calls') {
           addCalls(graph, content, ext, f.path);
         } else {
@@ -150,19 +157,28 @@ function isValidSpecifier(spec) {
   return /^[@\w./~-]+$/.test(spec);
 }
 
-function addSymbols(graph, content, ext, filePath) {
-  const { symbols, edges } = parseSymbols(content, ext);
+function addSymbols(graph, content, ext, filePath, withSource) {
+  const { symbols, edges } = parseSymbols(content, ext, { withSource });
   for (const s of symbols) {
     graph.addNode({
       id: `${filePath}::${s.name}`,
       label: s.name,
       type: s.kind === 'variable' ? 'variable' : 'function',
       path: filePath,
-      group: filePath, // cluster symbols under their file
+      group: filePath,   // cluster symbols under their file
+      line: s.line,      // declaration line — shown on the node and linked to
+      content: s.body,   // 'source' level: the function's code body
     });
   }
   for (const e of edges) {
-    graph.addEdge({ from: `${filePath}::${e.from}`, to: `${filePath}::${e.to}`, type: 'call', file: filePath, line: e.line });
+    graph.addEdge({
+      from: `${filePath}::${e.from}`,
+      to: `${filePath}::${e.to}`,
+      type: 'call',
+      file: filePath,
+      line: e.line,
+      code: e.code,      // 'source' level: the actual line of code
+    });
   }
 }
 

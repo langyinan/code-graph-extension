@@ -130,6 +130,17 @@ body {
   height: auto;
 }
 
+/* Code section inside "Function source" nodes */
+#mermaid-output .cg-code {
+  display: inline-block;
+  text-align: left;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #1f2328;
+}
+
 /* Clickable edges (paths + their L<n> labels) */
 #mermaid-output .flowchart-link {
   pointer-events: stroke;

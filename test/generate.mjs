@@ -57,7 +57,8 @@ console.log(`\n[code-graph] Done — ${graph.stats().nodes} nodes, ${graph.stats
 
 const linkBase = `https://github.com/${owner}/${repo}/blob/${ref}/`;
 const linkBaseDir = `https://github.com/${owner}/${repo}/tree/${ref}/`;
-const { mermaid: mermaidSrc, edgeLinks } = graph.toMermaid({ linkBase, linkBaseDir });
+const orient = detail === 'controlflow' ? 'TB' : 'LR';
+const { mermaid: mermaidSrc, edgeLinks } = graph.toMermaid({ linkBase, linkBaseDir, orient });
 
 // ── Write standalone HTML viewer ─────────────────────────────────────────────
 // Relative, forward-slashed path so it loads reliably under file://
@@ -76,6 +77,7 @@ const html = /* html */ `<!DOCTYPE html>
     #stats { font-size: 12px; color: #adb5bd; }
     #graph { padding: 20px; overflow: auto; min-height: 300px; }
     #graph svg { max-width: none; height: auto; }
+    #graph .cg-code { display:inline-block; text-align:left; white-space:pre; font-family: ui-monospace, Menlo, Consolas, monospace; font-size:11px; line-height:1.45; color:#1f2328; }
     pre { background: #fff; border: 1px solid #d0d7de; border-radius: 6px; padding: 16px; font-size: 12px; overflow: auto; white-space: pre-wrap; }
     #toggle { margin: 0 20px 10px; background: none; border: 1px solid #d0d7de; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
     #err { color: #cf222e; padding: 0 20px; font-family: monospace; white-space: pre-wrap; }

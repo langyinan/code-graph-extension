@@ -248,20 +248,26 @@ const LEGEND = {
   variable: ['#dafbe1', '#1a7f37', 'Variable'],
   external: ['#fff3cd', '#d39e00', 'External dependency'],
   component: ['#ddf4ff', '#0969da', 'Folder / component'],
+  decision: ['#fff8c5', '#bf8700', 'Condition (if/loop)'],
+  process: ['#ECECFF', '#9370DB', 'Statement'],
+  terminal: ['#dafbe1', '#1a7f37', 'Start / end'],
 };
 
 function updateLegend({ mode, detail, includeExternals }) {
   const keys = [];
-  if (detail === 'low') {
+  const symbolView = detail === 'symbols' || detail === 'source';
+  if (detail === 'controlflow') {
+    keys.push('decision', 'process', 'terminal');
+  } else if (detail === 'low') {
     keys.push('component');
-  } else if (detail === 'symbols') {
+  } else if (symbolView) {
     keys.push('function', 'variable');
   } else if (mode === 'calls') {
     keys.push('function');
   } else {
     keys.push('file');
   }
-  if (includeExternals && detail !== 'symbols' && mode !== 'calls') keys.push('external');
+  if (includeExternals && !symbolView && detail !== 'controlflow' && mode !== 'calls') keys.push('external');
 
   graphLegend.innerHTML = keys.map(k => {
     const [fill, stroke, label] = LEGEND[k];
