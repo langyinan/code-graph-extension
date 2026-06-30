@@ -36,7 +36,7 @@
   "options_page": "options/options.html",
   "web_accessible_resources": [
     {
-      "resources": ["panel/panel.html", "panel/panel.js", "panel/panel.css", "vendor/mermaid.min.js"],
+      "resources": ["panel/panel.html", "panel/panel.js", "panel/panel.css", "vendor/mermaid.min.js", "vendor/open-props.min.css", "vendor/elk/*"],
       "matches": ["https://github.com/*"]
     }
   ]

@@ -14,6 +14,8 @@ export async function buildGraph({
   includeExternals = true,
   keepIsolated = true,
   detail = 'medium', // 'low'=components, 'medium'=source files, 'high'=all files, 'symbols'=functions+variables, 'source'=symbols + code bodies
+  mergeBlocks = true, // control flow: collapse consecutive non-branching statements into one block
+  inlineCalls = true, // control flow: nest a called in-file function's flowchart inside the caller
 }) {
   const graph = new Graph();
 
@@ -67,7 +69,7 @@ export async function buildGraph({
         const ext = extOf(f.path);
 
         if (cfgMode) {
-          addControlFlow(graph, content, ext, f.path);
+          addControlFlow(graph, content, ext, f.path, { mergeBlocks, inlineCalls });
         } else if (symbolMode) {
           addSymbols(graph, content, ext, f.path, withSource);
         } else if (mode === 'calls') {

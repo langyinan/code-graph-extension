@@ -1,5 +1,5 @@
 import { parseSymbols } from '../parsers/parseSymbols.js';
-import { parseFunctionAst, stripCode } from '../parsers/parseControlFlow.js';
+import { parseFunctionAst, stripCode, extractFunctionBody } from '../parsers/parseControlFlow.js';
 
 const MAX_CFG_NODES = 1500; // safety cap so deep inlining can't explode
 
@@ -8,10 +8,17 @@ const MAX_CFG_NODES = 1500; // safety cap so deep inlining can't explode
  * that function's flowchart inside the caller's block (inlining the call
  * hierarchy), while sequential statements chain as usual.
  */
-export function addControlFlow(graph, content, ext, filePath) {
-  const { symbols } = parseSymbols(content, ext, { withSource: true });
+export function addControlFlow(graph, content, ext, filePath, { mergeBlocks = true, inlineCalls = true } = {}) {
+  const { symbols } = parseSymbols(content, ext);
   const bodies = new Map();
-  for (const s of symbols) if (s.kind === 'function' && s.body) bodies.set(s.name, s.body);
+  for (const s of symbols) {
+    if (s.kind !== 'function' || s.index == null) continue;
+    // Brace-match the full body from the declaration; parseSymbols' own slice
+    // stops at the first nested symbol and would truncate functions that
+    // contain inner consts/functions to just their signature line.
+    const body = extractFunctionBody(content, s.index, ext);
+    if (body) bodies.set(s.name, body);
+  }
   if (!bodies.size) return;
 
   const astCache = new Map();
@@ -21,16 +28,24 @@ export function addControlFlow(graph, content, ext, filePath) {
   };
   const names = [...bodies.keys()];
 
-  // Roots = functions not called by any other in-file function (entry points).
-  const calledByOthers = new Set();
-  for (const [name, body] of bodies) {
-    const stripped = stripCode(body);
-    for (const other of names) {
-      if (other !== name && callRe(other).test(stripped)) calledByOthers.add(other);
+  // Roots = the functions we render as their own flowchart. With inlining on,
+  // only entry points (functions not called by any other in-file function) are
+  // roots; their callees get nested inline. With inlining off, every function is
+  // its own independent chart and calls stay as plain statement nodes.
+  let roots;
+  if (inlineCalls) {
+    const calledByOthers = new Set();
+    for (const [name, body] of bodies) {
+      const stripped = stripCode(body);
+      for (const other of names) {
+        if (other !== name && callRe(other).test(stripped)) calledByOthers.add(other);
+      }
     }
+    roots = names.filter(n => !calledByOthers.has(n));
+    if (!roots.length) roots = names; // mutual recursion — show everything as roots
+  } else {
+    roots = names;
   }
-  let roots = names.filter(n => !calledByOthers.has(n));
-  if (!roots.length) roots = names; // mutual recursion — show everything as roots
 
   let count = 0;
   let capped = false;
@@ -64,11 +79,20 @@ export function addControlFlow(graph, content, ext, filePath) {
     return { entry: start, exits };
   }
 
+  // In-file functions a statement calls (only when inlining is enabled).
+  const callsOf = node =>
+    inlineCalls && node.t === 'stmt' ? calledFuncs(node.text, names, bodies) : [];
+
+  // A plain statement = a `stmt` with no in-file call to inline. Runs of these
+  // can be collapsed into one block node to cut node/edge clutter.
+  const isPlainStmt = node => node.t === 'stmt' && callsOf(node).length === 0;
+
   function emit(list, preds, group, stack, nested, returns) {
-    for (const node of list) {
+    for (let i = 0; i < list.length; i++) {
       if (capped) break;
+      const node = list[i];
       if (node.t === 'stmt' || node.t === 'jump') {
-        const calls = node.t === 'stmt' ? calledFuncs(node.text, names, bodies) : [];
+        const calls = callsOf(node);
         if (calls.length) {
           for (const F of calls) {
             if (stack.has(F)) { // recursion — render as a plain node, don't inline
@@ -86,6 +110,13 @@ export function addControlFlow(graph, content, ext, filePath) {
               preds = r.exits;
             }
           }
+        } else if (mergeBlocks && isPlainStmt(node)) {
+          // Collapse this and any following plain statements into one block node.
+          const texts = [node.text];
+          while (i + 1 < list.length && isPlainStmt(list[i + 1])) texts.push(list[++i].text);
+          const pn = addNode(texts.join('\n'), 'process', group);
+          preds.forEach(p => addEdge(p.from, pn, p.label));
+          preds = pn ? [{ from: pn }] : preds;
         } else {
           const pn = addNode(node.text, node.t === 'jump' ? 'jump' : 'process', group);
           preds.forEach(p => addEdge(p.from, pn, p.label));

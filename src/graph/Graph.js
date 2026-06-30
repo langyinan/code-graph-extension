@@ -38,14 +38,25 @@ export class Graph {
     };
     const safeLabel = str => str.replace(/"/g, '#quot;').replace(/</g, '#lt;').replace(/>/g, '#gt;');
 
-    // Thorough escaping for embedding arbitrary source code in a Mermaid label
-    // (handles #, &, quotes, angle brackets via numeric/entity codes).
+    // Thorough escaping for embedding arbitrary source code in a Mermaid label.
+    // Mermaid decodes `#NN;` numeric character references back to the literal for
+    // display, so we encode every character that its flowchart parser would
+    // otherwise choke on: #, &, quotes, angle brackets, and — crucially for code —
+    // backslashes, backticks, pipes, and curly/square brackets. (`#` must go first
+    // so the references we introduce aren't double-escaped.)
     const escapeCode = s => s
       .replace(/#/g, '#35;')
       .replace(/&/g, '#amp;')
       .replace(/"/g, '#quot;')
       .replace(/</g, '#lt;')
-      .replace(/>/g, '#gt;');
+      .replace(/>/g, '#gt;')
+      .replace(/\\/g, '#92;')
+      .replace(/`/g, '#96;')
+      .replace(/\|/g, '#124;')
+      .replace(/\{/g, '#123;')
+      .replace(/\}/g, '#125;')
+      .replace(/\[/g, '#91;')
+      .replace(/\]/g, '#93;');
     const MAX_CODE_LINES = 14;
     const MAX_CODE_COLS = 80;
     const codeBlock = text => {
@@ -73,13 +84,20 @@ export class Graph {
     }
 
     const CFG_TYPES = new Set(['start', 'end', 'process', 'decision', 'jump']);
+    const CFG_MAX_BLOCK_LINES = 10;
     const shapeFor = node => {
       // Control-flow nodes: code-escaped, distinct flowchart shapes.
       if (CFG_TYPES.has(node.type)) {
-        const t = escapeCode(truncate(node.label, 60));
-        if (node.type === 'decision') return `{"${t}"}`;          // diamond
-        if (node.type === 'start' || node.type === 'end') return `(["${t}"])`; // terminal
-        return `["${t}"]`;                                        // process / jump
+        if (node.type === 'decision') return `{"${escapeCode(truncate(node.label, 60))}"}`; // diamond
+        if (node.type === 'start' || node.type === 'end') {
+          return `(["${escapeCode(truncate(node.label, 40))}"])`;                            // terminal
+        }
+        // process / jump — may be a merged block of several statements, so render
+        // each line separately (escaped) rather than truncating to one line.
+        const raw = node.label.split('\n');
+        const lines = raw.slice(0, CFG_MAX_BLOCK_LINES).map(l => escapeCode(truncate(l, 50)));
+        const body = lines.join('<br/>') + (raw.length > CFG_MAX_BLOCK_LINES ? '<br/>…' : '');
+        return `["${body}"]`;
       }
       // 'source' level: show the function's code body inside the node, in a
       // monospace code section. 'symbols' level: just the declaration line.

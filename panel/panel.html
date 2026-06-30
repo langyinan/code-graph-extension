@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Code Graph</title>
+  <link rel="stylesheet" href="../vendor/open-props.min.css" />
   <link rel="stylesheet" href="panel.css" />
 </head>
 <body>
@@ -22,16 +23,37 @@
         <option value="source">Function source (code)</option>
         <option value="controlflow">Control flow (if/loops)</option>
       </select>
+      <select id="theme-select" title="Color theme">
+        <option value="default" selected>Default (purple)</option>
+        <option value="neutral">Neutral (grayscale)</option>
+        <option value="forest">Forest (green)</option>
+        <option value="dark">Dark</option>
+      </select>
+      <select id="layout-select" title="Layout engine — ELK routes edges more cleanly">
+        <option value="dagre" selected>Layout: Dagre</option>
+        <option value="elk">Layout: ELK</option>
+      </select>
       <input id="path-filter" type="text" placeholder="Filter by path prefix…" />
-      <button id="refresh-btn" title="Regenerate graph">↺</button>
-      <button id="copy-btn" title="Copy Mermaid source">Copy</button>
-      <button id="download-btn" title="Download SVG">SVG</button>
+      <button id="refresh-btn" class="icon-btn" title="Regenerate graph" aria-label="Regenerate graph">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+      </button>
+      <button id="copy-btn" title="Copy Mermaid source">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        <span>Copy</span>
+      </button>
+      <button id="download-btn" title="Download SVG">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        <span>SVG</span>
+      </button>
     </div>
   </header>
 
   <div id="panel-toggles">
     <label title="Track the folder you're viewing on GitHub and scope the graph to it">
-      <input type="checkbox" id="toggle-follow" /> Follow GitHub folder
+      <input type="checkbox" id="toggle-follow" checked /> Follow GitHub folder
+    </label>
+    <label title="Draw edges as straight lines instead of curves">
+      <input type="checkbox" id="toggle-straight" /> Straight edges
     </label>
     <label title="Group files into folder subgraphs">
       <input type="checkbox" id="toggle-grouping" checked /> Folder structure
@@ -41,6 +63,12 @@
     </label>
     <label title="Keep files that have no dependency edges">
       <input type="checkbox" id="toggle-isolated" checked /> Isolated files
+    </label>
+    <label title="Control-flow view: combine consecutive non-branching statements into one block">
+      <input type="checkbox" id="toggle-merge" checked /> Merge statements
+    </label>
+    <label title="Control-flow view: nest a called in-file function's flowchart inside the caller (off = each function is its own compact chart)">
+      <input type="checkbox" id="toggle-inline" /> Inline calls
     </label>
   </div>
 
@@ -58,9 +86,16 @@
       <div id="mermaid-output" class="mermaid" style="display:none"></div>
     </div>
     <div id="zoom-controls">
-      <button id="zoom-in" title="Zoom in">+</button>
-      <button id="zoom-out" title="Zoom out">−</button>
-      <button id="zoom-reset" title="Reset view">⤢</button>
+      <button id="zoom-in" class="icon-btn" title="Zoom in" aria-label="Zoom in">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+      </button>
+      <button id="zoom-out" class="icon-btn" title="Zoom out" aria-label="Zoom out">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+      </button>
+      <span class="zoom-divider" aria-hidden="true"></span>
+      <button id="zoom-reset" class="icon-btn" title="Reset to default view (fit &amp; center)" aria-label="Reset to default view">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+      </button>
     </div>
   </div>
 

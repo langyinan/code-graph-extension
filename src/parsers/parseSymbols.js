@@ -50,7 +50,7 @@ export function parseSymbols(source, ext, { withSource = false } = {}) {
 
   return {
     symbols: list.map(d => {
-      const s = { name: d.name, kind: d.kind, line: lineAt(source, d.index) };
+      const s = { name: d.name, kind: d.kind, line: lineAt(source, d.index), index: d.index };
       if (withSource && d.body) s.body = d.body;
       return s;
     }),

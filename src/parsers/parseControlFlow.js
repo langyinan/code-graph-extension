@@ -22,16 +22,51 @@ export function supportsControlFlow(ext) {
 export function parseFunctionAst(funcBody, ext) {
   if (!BRACE_LANGS.has(ext)) return null;
   const s = stripToSpaces(funcBody);
-  const open = s.indexOf('{');
+  const open = bodyOpenBrace(s, 0);
   if (open === -1) return null;
   const close = matchBrace(s, open);
   if (close === -1) return null;
   return parseStmts(s, funcBody, open + 1, close);
 }
 
+/**
+ * Index of a function body's opening brace, skipping a leading parameter list so
+ * a destructuring parameter like `({ a, b }) {` isn't mistaken for the body. If
+ * a `(` precedes the first `{`, we jump past its matching `)` before searching.
+ * (`s` must be brace-stripped of strings/comments.)
+ */
+function bodyOpenBrace(s, from) {
+  const p = s.indexOf('(', from);
+  const b = s.indexOf('{', from);
+  if (p !== -1 && (b === -1 || p < b)) {
+    const pc = matchParen(s, p);
+    if (pc !== -1) return s.indexOf('{', pc + 1);
+  }
+  return b;
+}
+
 /** Blank out comments and string contents (offsets preserved) — for call scanning. */
 export function stripCode(src) {
   return stripToSpaces(src);
+}
+
+/**
+ * Extract a function's full source text — from its declaration at `from` through
+ * the matching closing brace of its body — using brace matching that ignores
+ * strings/comments. Returns null if no balanced brace block follows `from`.
+ *
+ * This is needed because slicing a body up to "the next declared symbol" stops
+ * at the first *nested* declaration, truncating functions that contain inner
+ * consts/functions down to just their signature line.
+ */
+export function extractFunctionBody(src, from, ext) {
+  if (!BRACE_LANGS.has(ext)) return null;
+  const s = stripToSpaces(src);
+  const open = bodyOpenBrace(s, from);
+  if (open === -1) return null;
+  const close = matchBrace(s, open);
+  if (close === -1) return null;
+  return src.slice(from, close + 1);
 }
 
 export function parseControlFlow(funcBody, ext, funcName = 'start') {

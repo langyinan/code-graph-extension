@@ -42,10 +42,12 @@
   }
 
   function togglePanel() {
-    if (dock) {
-      closePanel();
-      return;
-    }
+    if (dock) closePanel();
+    else openPanel();
+  }
+
+  function openPanel() {
+    if (dock) return;
 
     const info = parseRepoFromURL();
     if (!info) return;
@@ -72,6 +74,10 @@
 
     document.documentElement.classList.add('code-graph-docked');
     applyWidth(width);
+
+    // Remember the panel is open so it survives a full page reload (e.g. if a
+    // click triggers a hard navigation rather than GitHub's soft navigation).
+    try { sessionStorage.setItem('codeGraphPanelOpen', '1'); } catch {}
   }
 
   function closePanel() {
@@ -80,6 +86,27 @@
     iframe = null;
     document.documentElement.classList.remove('code-graph-docked');
     document.documentElement.style.marginRight = '';
+    try { sessionStorage.removeItem('codeGraphPanelOpen'); } catch {}
+  }
+
+  /**
+   * Navigate the main GitHub tab to `url` while keeping the docked panel open.
+   * Clicking a synthesized same-origin <a> lets GitHub's client-side router
+   * (Turbo) do a soft navigation, which swaps the page content but leaves our
+   * dock (a direct child of <body>) in place. If that falls through to a hard
+   * navigation, the sessionStorage flag above re-opens the panel on reload.
+   */
+  function navigateMain(url) {
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      location.assign(url);
+    }
   }
 
   // ── "Follow current folder" support ──────────────────────────────────────────
@@ -108,10 +135,13 @@
     if (loc) iframe.contentWindow.postMessage(loc, EXT_ORIGIN);
   }
 
-  // Reply when the panel asks for the current location (e.g. right after it loads).
+  // Messages from the panel iframe.
   window.addEventListener('message', e => {
-    if (e.source === iframe?.contentWindow && e.data?.type === 'CODE_GRAPH_REQUEST_LOCATION') {
+    if (e.source !== iframe?.contentWindow) return;
+    if (e.data?.type === 'CODE_GRAPH_REQUEST_LOCATION') {
       pushLocation();
+    } else if (e.data?.type === 'CODE_GRAPH_NAVIGATE' && typeof e.data.url === 'string') {
+      navigateMain(e.data.url);
     }
   });
 
@@ -172,5 +202,11 @@
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
-  if (isRepoPage()) injectButton();
+  if (isRepoPage()) {
+    injectButton();
+    // Re-open the panel after a full reload if it was open before navigating.
+    let wasOpen = false;
+    try { wasOpen = sessionStorage.getItem('codeGraphPanelOpen') === '1'; } catch {}
+    if (wasOpen) openPanel();
+  }
 })();

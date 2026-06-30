@@ -13,6 +13,8 @@ chrome.runtime.onConnect.addListener(port => {
       includeExternals = true,
       keepIsolated = true,
       detail = 'medium',
+      mergeBlocks = true,
+      inlineCalls = true,
     } = msg.payload;
 
     try {
@@ -37,6 +39,8 @@ chrome.runtime.onConnect.addListener(port => {
         includeExternals,
         keepIsolated,
         detail,
+        mergeBlocks,
+        inlineCalls,
         onProgress(done, total) {
           port.postMessage({ type: 'progress', done, total });
         },
@@ -45,7 +49,12 @@ chrome.runtime.onConnect.addListener(port => {
       const linkBase = `https://github.com/${owner}/${repo}/blob/${ref}/`;
       const linkBaseDir = `https://github.com/${owner}/${repo}/tree/${ref}/`;
       const orient = detail === 'controlflow' ? 'TB' : 'LR';
-      const { mermaid, edgeLinks } = graph.toMermaid({ linkBase, linkBaseDir, grouping, orient });
+      // Control flow reads best as a flat flowchart. Subgraph clusters force the
+      // layout engine (ELK hardcodes hierarchyHandling=SEPARATE_CHILDREN, dagre
+      // similarly) to route edges *around* each function's box, producing long,
+      // many-turn detours. Flat layout lets edges go straight node-to-node.
+      const useGrouping = detail === 'controlflow' ? false : grouping;
+      const { mermaid, edgeLinks } = graph.toMermaid({ linkBase, linkBaseDir, grouping: useGrouping, orient });
       port.postMessage({ type: 'done', mermaid, edgeLinks, stats: graph.stats() });
     } catch (err) {
       port.postMessage({ type: 'error', message: err.message });

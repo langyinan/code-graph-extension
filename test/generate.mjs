@@ -97,7 +97,7 @@ const html = /* html */ `<!DOCTYPE html>
     // Source is embedded as a JSON string to avoid any HTML/quote escaping issues.
     const source = ${JSON.stringify(mermaidSrc)};
     const edgeLinks = ${JSON.stringify(edgeLinks)};
-    mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose', maxTextSize: 500000 });
+    mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose', maxTextSize: 500000, maxEdges: 100000 });
     (async () => {
       try {
         const { svg } = await mermaid.render('codeGraph', source);

@@ -1,4 +1,4 @@
-import { getStoredApiKey } from '../src/storage/settings.js';
+import { getStoredApiKey, getStoredPrefs, setStoredPrefs } from '../src/storage/settings.js';
 
 const params = new URLSearchParams(location.search);
 const owner = params.get('owner');
@@ -23,23 +23,118 @@ const toggleGrouping = document.getElementById('toggle-grouping');
 const toggleExternals = document.getElementById('toggle-externals');
 const toggleIsolated = document.getElementById('toggle-isolated');
 const toggleFollow = document.getElementById('toggle-follow');
+const toggleStraight = document.getElementById('toggle-straight');
+const toggleMerge = document.getElementById('toggle-merge');
+const toggleInline = document.getElementById('toggle-inline');
+const themeSelect = document.getElementById('theme-select');
+const layoutSelect = document.getElementById('layout-select');
 
 // Latest folder reported by the content script (the page the user is viewing).
 let latestLocation = null;
 
 document.getElementById('panel-title').textContent = `${owner}/${repo}`;
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'loose',
-  maxTextSize: 1_000_000,
-  // Match the panel body font so Mermaid's text measurement matches the rendered
-  // (foreignObject) font — otherwise labels get clipped.
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-  // Roomier layout — don't conserve space.
-  flowchart: { nodeSpacing: 55, rankSpacing: 70, padding: 14, useMaxWidth: false },
-});
+// The ELK layout engine ships as a self-contained ESM package (elkjs bundled,
+// no bare 'mermaid' import), so we lazy-load it on first use and register it as
+// a Mermaid layout loader. Returns false if it fails to load.
+let elkReady = null;
+function ensureElk() {
+  if (!elkReady) {
+    elkReady = import('../vendor/elk/mermaid-layout-elk.esm.min.mjs')
+      .then(m => { mermaid.registerLayoutLoaders(m.default); return true; })
+      .catch(err => { console.error('[code-graph] ELK layout failed to load', err); elkReady = null; return false; });
+  }
+  return elkReady;
+}
+
+async function resolveLayout() {
+  // Control flow routes far more cleanly with ELK: its layered layout puts ports
+  // on the top/bottom of nodes, so arrows enter following the top-down flow
+  // instead of looping into the sides (dagre has no port control). Prefer ELK
+  // there even when the selector says Dagre.
+  const wantElk = layoutSelect.value === 'elk' || detailSelect.value === 'controlflow';
+  if (!wantElk) return 'dagre';
+  const ok = await ensureElk();
+  if (!ok) {
+    if (layoutSelect.value === 'elk') setStatus('ELK layout unavailable — using Dagre.', true);
+    return 'dagre';
+  }
+  return 'elk';
+}
+
+// Theme, layout engine, and edge routing are render-time settings, so we
+// (re)initialize Mermaid from the current control values before each render —
+// no refetch needed.
+async function initMermaid() {
+  const layout = await resolveLayout();
+  const flow = flowConfig(layout);
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: themeSelect.value,
+    layout,
+    securityLevel: 'loose',
+    maxTextSize: 1_000_000,
+    // Mermaid caps edges at 500 by default and throws (rendered as the generic
+    // "Syntax error" bomb) past it — control-flow graphs blow past that easily.
+    maxEdges: 100_000,
+    // Match the panel body font so Mermaid's text measurement matches the rendered
+    // (foreignObject) font — otherwise labels get clipped.
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+    flowchart: { padding: 14, useMaxWidth: false, ...flow },
+    // ELK tuning: NETWORK_SIMPLEX node placement aligns connected nodes so edges
+    // run straight and enter from the top/bottom (following the flow) rather than
+    // looping into a node's side.
+    elk: { nodePlacementStrategy: 'NETWORK_SIMPLEX' },
+  });
+}
+
+// Edge routing (`curve`) and spacing depend on the layout engine + view:
+//  • ELK already routes orthogonally with its own bend points — just connect them
+//    with straight segments ('linear'); 'step'/'basis' would fight its routing.
+//  • Dagre control flow: 'step' (right-angle) when straight, else 'basis'.
+//  • Dagre other views: 'linear' (straight) vs 'basis' (curvy).
+function flowConfig(layout) {
+  const isControlFlow = detailSelect.value === 'controlflow';
+  const straight = toggleStraight.checked;
+  if (layout === 'elk') {
+    return { curve: 'linear', nodeSpacing: 50, rankSpacing: 60 };
+  }
+  if (isControlFlow) {
+    return { curve: straight ? 'step' : 'basis', nodeSpacing: 60, rankSpacing: 95 };
+  }
+  return { curve: straight ? 'linear' : 'basis', nodeSpacing: 55, rankSpacing: 70 };
+}
+
+// ── Persisted UI preferences ─────────────────────────────────────────────────
+// Each control maps to a pref key; checkboxes use `.checked`, selects `.value`.
+const PREF_CONTROLS = {
+  mode: { el: modeSelect, type: 'value' },
+  detail: { el: detailSelect, type: 'value' },
+  theme: { el: themeSelect, type: 'value' },
+  layout: { el: layoutSelect, type: 'value' },
+  straight: { el: toggleStraight, type: 'checked' },
+  merge: { el: toggleMerge, type: 'checked' },
+  inline: { el: toggleInline, type: 'checked' },
+  follow: { el: toggleFollow, type: 'checked' },
+  grouping: { el: toggleGrouping, type: 'checked' },
+  externals: { el: toggleExternals, type: 'checked' },
+  isolated: { el: toggleIsolated, type: 'checked' },
+};
+
+function applyPrefs(prefs) {
+  for (const [key, { el, type }] of Object.entries(PREF_CONTROLS)) {
+    if (prefs[key] === undefined) continue;
+    el[type] = prefs[key];
+  }
+}
+
+function savePrefs() {
+  const prefs = {};
+  for (const [key, { el, type }] of Object.entries(PREF_CONTROLS)) {
+    prefs[key] = el[type];
+  }
+  setStoredPrefs(prefs);
+}
 
 let currentMermaid = '';
 let currentEdgeLinks = {};
@@ -67,6 +162,8 @@ async function generate() {
   const grouping = toggleGrouping.checked;
   const includeExternals = toggleExternals.checked;
   const keepIsolated = toggleIsolated.checked;
+  const mergeBlocks = toggleMerge.checked;
+  const inlineCalls = toggleInline.checked;
 
   updateLegend({ mode, detail, includeExternals });
 
@@ -103,11 +200,14 @@ async function generate() {
 
   port.postMessage({
     type: 'GENERATE_GRAPH',
-    payload: { owner, repo, ref, path, mode, apiKey, detail, grouping, includeExternals, keepIsolated },
+    payload: { owner, repo, ref, path, mode, apiKey, detail, grouping, includeExternals, keepIsolated, mergeBlocks, inlineCalls },
   });
 }
 
 async function renderMermaid(source) {
+  // Re-init each render so theme / layout / edge routing / spacing always match
+  // the current controls (and the active detail level).
+  await initMermaid();
   mermaidOutput.textContent = source;
   mermaidOutput.removeAttribute('data-processed');
   graphPlaceholder.style.display = 'none';
@@ -116,8 +216,76 @@ async function renderMermaid(source) {
   // text measurement, which shrinks node boxes and clips the labels.
   graphViewport.style.transform = 'none';
   await mermaid.run({ nodes: [mermaidOutput] });
-  attachEdgeLinks(mermaidOutput.querySelector('svg'));
+  const svg = mermaidOutput.querySelector('svg');
+  attachEdgeLinks(svg);
+  attachNodeLinks(svg);
+  decorateEdges(svg);
   setupPanZoom();
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Mermaid only puts an arrowhead at the end of each edge, and draws nodes *after*
+// edges — so markers at a node boundary get hidden behind the node. We (1) add a
+// black dot at each edge's start, and (2) lift the edge layer above the nodes so
+// both the dot and the arrowhead stay visible where they meet a node.
+function decorateEdges(svg) {
+  if (!svg) return;
+
+  let defs = svg.querySelector('defs');
+  if (!defs) { defs = document.createElementNS(SVG_NS, 'defs'); svg.insertBefore(defs, svg.firstChild); }
+  if (!defs.querySelector('#cg-edge-dot')) {
+    const marker = document.createElementNS(SVG_NS, 'marker');
+    marker.setAttribute('id', 'cg-edge-dot');
+    marker.setAttribute('markerWidth', '6');
+    marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('refX', '3');
+    marker.setAttribute('refY', '3');
+    marker.setAttribute('markerUnits', 'userSpaceOnUse');
+    marker.setAttribute('orient', 'auto');
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('cx', '3');
+    circle.setAttribute('cy', '3');
+    circle.setAttribute('r', '2.5');
+    circle.setAttribute('fill', '#1f2328');
+    marker.appendChild(circle);
+    defs.appendChild(marker);
+  }
+  svg.querySelectorAll('.edgePaths path, path.flowchart-link').forEach(p =>
+    p.setAttribute('marker-start', 'url(#cg-edge-dot)'));
+
+  // SVG paints in document order, so re-append the edge layer (then labels) after
+  // the nodes to put edges/markers/labels on top.
+  const edgePaths = svg.querySelector('g.edgePaths');
+  const edgeLabels = svg.querySelector('g.edgeLabels');
+  if (edgePaths) {
+    const parent = edgePaths.parentNode;
+    parent.appendChild(edgePaths);
+    if (edgeLabels) parent.appendChild(edgeLabels);
+  }
+}
+
+// Navigate the parent GitHub tab (keeping this panel open) instead of opening a
+// new window. The content script performs a soft navigation on the main page.
+function openLink(href) {
+  if (!href) return;
+  window.parent.postMessage({ type: 'CODE_GRAPH_NAVIGATE', url: href }, 'https://github.com');
+}
+
+// Mermaid renders click-able nodes as <a> wrappers (with an href + target=_blank).
+// Intercept those so they navigate the GitHub tab rather than opening a new one.
+function attachNodeLinks(svg) {
+  if (!svg) return;
+  svg.querySelectorAll('a').forEach(a => {
+    const href = a.getAttribute('xlink:href') || a.getAttribute('href');
+    if (!href) return;
+    a.removeAttribute('target');
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      openLink(href);
+    });
+  });
 }
 
 // Mermaid can't make edges clickable natively, so we wire it up after render:
@@ -136,7 +304,7 @@ function attachEdgeLinks(svg) {
     }
     el.addEventListener('click', e => {
       e.stopPropagation();
-      window.open(href, '_blank', 'noopener');
+      openLink(href);
     });
   });
 }
@@ -166,8 +334,15 @@ function setupPanZoom() {
   // Fit to the container width initially (clamped), so big graphs are visible.
   const avail = graphContainer.clientWidth - 32;
   view.scale = naturalW ? Math.min(1, Math.max(0.15, avail / naturalW)) : 1;
-  view.x = 0;
-  view.y = 0;
+
+  // Center the graph in the viewport when it fits; otherwise pin to the top-left
+  // so you can read big graphs from the start. This is the "default" home view.
+  const cw = graphContainer.clientWidth;
+  const ch = graphContainer.clientHeight;
+  const scaledW = naturalW * view.scale;
+  const scaledH = naturalH * view.scale;
+  view.x = scaledW < cw ? (cw - scaledW) / 2 : 0;
+  view.y = scaledH < ch ? (ch - scaledH) / 2 : 0;
   applyTransform();
 }
 
@@ -295,12 +470,29 @@ downloadBtn.addEventListener('click', () => {
   a.click();
 });
 
+// Theme and edge-curve only affect rendering, so re-init Mermaid and redraw the
+// existing graph instead of refetching it from GitHub.
+async function rerender() {
+  if (currentMermaid) await renderMermaid(currentMermaid);
+}
+
+themeSelect.addEventListener('change', rerender);
+layoutSelect.addEventListener('change', rerender);
+toggleStraight.addEventListener('change', rerender);
+
+// Persist every preference control whenever it changes.
+for (const { el } of Object.values(PREF_CONTROLS)) {
+  el.addEventListener('change', savePrefs);
+}
+
 refreshBtn.addEventListener('click', generate);
 modeSelect.addEventListener('change', generate);
 detailSelect.addEventListener('change', generate);
 toggleGrouping.addEventListener('change', generate);
 toggleExternals.addEventListener('change', generate);
 toggleIsolated.addEventListener('change', generate);
+toggleMerge.addEventListener('change', generate);
+toggleInline.addEventListener('change', generate);
 
 // ── Follow current GitHub folder ─────────────────────────────────────────────
 let lastApplied = null;
@@ -336,7 +528,19 @@ toggleFollow.addEventListener('change', () => {
   }
 });
 
-// Ask the page for the current folder up front, so toggling on is instant.
-window.parent.postMessage({ type: 'CODE_GRAPH_REQUEST_LOCATION' }, '*');
+// Restore saved preferences, then do the first render. Done before generate()
+// so the persisted theme / routing / toggles take effect on the first paint.
+async function bootstrap() {
+  applyPrefs(await getStoredPrefs());
 
-generate();
+  // Reflect the follow state on the path filter (read-only + dimmed when on).
+  pathFilter.readOnly = toggleFollow.checked;
+  pathFilter.style.opacity = toggleFollow.checked ? '0.55' : '';
+
+  // Ask the page for the current folder up front, so following is instant.
+  window.parent.postMessage({ type: 'CODE_GRAPH_REQUEST_LOCATION' }, '*');
+
+  generate();
+}
+
+bootstrap();
